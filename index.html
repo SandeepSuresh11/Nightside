@@ -482,21 +482,13 @@ table.ref td.n{font-family:var(--f-mono);white-space:nowrap}
 <div class="mode" id="m-sun">
   <div class="stage" id="sunStage">
     <canvas id="sunCv"></canvas>
-    <span class="stageTag" id="sunTag">Loading SDO</span>
+    <span class="stageTag" id="sunTag">Photosphere · live</span>
     <span class="stageVal" id="sunStageVal"></span>
     <div class="stageBtns">
-      <button id="sunPlay" aria-label="Play the last eight hours">▶</button>
       <button id="sunReset" aria-label="Reset the view">⌂</button>
       <button id="sunLabels" aria-label="Toggle region numbers">Aa</button>
     </div>
-    <span class="stageHint" id="sunHint">Live from NASA SDO · drag to pan, pinch to zoom</span>
-  </div>
-  <div class="layerbar" style="padding:10px 16px 0">
-    <button class="chip on" data-chan="0304">304 Å</button>
-    <button class="chip" data-chan="0171">171 Å</button>
-    <button class="chip" data-chan="0193">193 Å</button>
-    <button class="chip" data-chan="HMIIF">White light</button>
-    <button class="chip" data-chan="HMIB">Magnetic</button>
+    <span class="stageHint" id="sunHint">Drag to rotate · sunspots are the real ones from NOAA</span>
   </div>
   <div class="headline">
     <h1 id="sunHeadline">—</h1>
@@ -575,10 +567,9 @@ table.ref td.n{font-family:var(--f-mono);white-space:nowrap}
       <p>The Moon keeps one face towards us, but not perfectly. Libration lets us see about 59% of the surface over a month. The view accounts for the optical libration in longitude and latitude.</p>
       <p>By default the surface is drawn from real feature coordinates rather than photographed. For a photographic Moon, use <b>Choose a lunar map from this phone</b> at the bottom of this tab and pick an equirectangular lunar map — the phase, terminator and libration all still work, the surface is just the real one. It is stored on your device, not uploaded.</p></details>
     <details><summary>Reading the Sun view</summary>
-      <p>Active regions come from NOAA's joint USAF/NOAA Solar Region Summary, circled at the heliographic latitude and longitude in that report. Marker size follows the reported sunspot area. On the white-light channel you can check the overlay against the spots you can actually see.</p>
-      <p>The image itself is live from NASA's Solar Dynamics Observatory, refreshed every 15 minutes. Drag to pan and pinch to zoom into a spot group. Switch channels to see different heights in the atmosphere: 304 Å is the chromosphere where prominences live, 171 and 193 Å are the corona, white light is the visible surface, and the magnetogram shows field polarity.</p><p>Region numbers turn red when the region carries a Delta magnetic class — those are the ones that produce X-class flares.</p>
-      <p>The ▶ button plays the last eight hours as a time-lapse, eight real frames pulled from the Helioviewer archive. The region circles are hidden while it plays, because they describe the present moment rather than the frame on screen.</p>
-      <p>One honest note: the glow around the disc is decorative. It is drawn by the app, kept outside the photographic disc, and is not instrument data. Everything inside the disc edge is the SDO photograph.</p></details>
+      <p>Active regions come from NOAA's joint USAF/NOAA Solar Region Summary. Marker size follows the reported sunspot area, so a big blot really is a big group, and a group with many spots is drawn as a cluster rather than one dot. Numbers turn red for a Delta magnetic class — the ones that produce X-class flares.</p>
+      <p>The disc is drawn rather than photographed, and it runs continuously: granulation, a breathing corona, prominences on the limb, and the surface turning at the Sun's real rate of about 14° a day at the equator. Drag it to spin ahead and see what is about to come round the east limb.</p><p>What is real is the spots. Every group comes from NOAA's Solar Region Summary at its reported heliographic latitude, longitude and area, foreshortened towards the limb the way a real group is.</p><p>Region numbers turn red when the region carries a Delta magnetic class — those are the ones that produce X-class flares.</p>
+      </details>
     <details><summary>Reading the star view</summary>
       <p>Around 70 of the brightest stars, drawn at their catalogue positions, plus the planets computed from orbital elements. Positions are good to a few arcminutes — far better than you need to find something by eye.</p>
       <p>Magnitude runs backwards: lower is brighter. Sirius is −1.5, the faintest star most people can see from a dark site is about +6, and from a city more like +3.</p>
@@ -2177,12 +2168,12 @@ const MoonView = {
        fixed-size buffer and is scaled up. Capping it here keeps a high-DPI
        phone from asking for four times the work, and the disc is smooth
        enough that the upscale does not show. */
-    const N = this.dragging ? 168 : 328;
+    const N = this.dragging ? 176 : 420;
     const oc = this._oc || (this._oc = document.createElement('canvas'));
     if (oc.width !== N) { oc.width = N; oc.height = N; }
     const og = oc.getContext('2d');
     const img = og.createImageData(N, N);
-    const earthshine = 0.055 * (1 - m.fraction);
+    const earthshine = 0.030 * Math.pow(1 - m.fraction, 2.2);
     const half = N / 2;
     const tex = MoonTex.state === 'ready';
     const rgbBuf = [0, 0, 0];
@@ -2203,9 +2194,9 @@ const MoonView = {
 
         const dot = mx * sunV[0] + my * sunV[1] + mz * sunV[2];
         const lit = dot < 0 ? 0 : Math.pow(dot, 0.62);
-        const term = smoothstep(-0.035, 0.035, dot);
+        const term = smoothstep(-0.022, 0.022, dot);
         const I = clamp(lit * term + earthshine * (1 - term), 0, 1);
-        const shade = 0.24 + 0.76 * I;
+        const shade = 0.02 + 0.98 * I;
         if (tex) {
           MoonTex.at(lat, lon, rgbBuf);
           img.data[o] = clamp(rgbBuf[0] * shade * 1.06, 0, 255);
@@ -2237,7 +2228,7 @@ const MoonView = {
         const ax = f.x * cl - f.z * sl, az1 = f.x * sl + f.z * cl;
         const vy2 = f.y * cb - az1 * sb, vz = f.y * sb + az1 * cb;
         if (vz < 0.34) continue;                                   // too near the limb to read
-        if (f.x * sunV[0] + f.y * sunV[1] + f.z * sunV[2] < 0.12) continue;
+        if (f.x * sunV[0] + f.y * sunV[1] + f.z * sunV[2] < 0.22) continue;
         cand.push({ name: f.name, type: f.type, prio: f.type === 4 ? 1e6 : f.rad,
                     x: cx + ax * R, y: cy - vy2 * R });
       }
@@ -2479,67 +2470,32 @@ function drawAltChart(p) {
    SDO team). Public domain, no key. The active-region overlay is
    drawn on top from NOAA's Solar Region Summary.
    ============================================================ */
-const SDO_CHANNELS = {
-  '0304': { label: 'AIA 304 Å', note: 'chromosphere and transition region — prominences show here', disc: 0.390 },
-  '0171': { label: 'AIA 171 Å', note: 'quiet corona and coronal loops at about 600,000 K', disc: 0.390 },
-  '0193': { label: 'AIA 193 Å', note: 'hotter corona and coronal holes, around 1.2 million K', disc: 0.390 },
-  'HMIIF': { label: 'HMI white light', note: 'the visible surface — sunspots as your eye would see them', disc: 0.468 },
-  'HMIB': { label: 'HMI magnetogram', note: 'magnetic polarity: white is outward, black is inward', disc: 0.468 }
-};
-const SDO_BASE = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_';
-
+/* ============================================================
+   SUN MODE — a live, always-running representation.
+   The disc is drawn, not photographed: multi-scale granulation,
+   limb darkening from the real I(mu) = 1 - u(1 - mu) law, faculae
+   near the limb, prominences and a breathing corona. What is real
+   is the sunspot data: every group comes from NOAA's Solar Region
+   Summary at its reported heliographic position and area, and the
+   whole surface turns at the true differential rotation rate.
+   ============================================================ */
 const SunView = {
-  channel: '0304', zoom: 1, panX: 0, panY: 0, labels: true,
-  img: null, imgKey: '', state: 'idle', raf: null,
+  rot: 0, labels: true, raf: null, stopped: true, t0: 0, drift: 0,
   init() {
-    const st = $('#sunStage');
-    dragHandler(st, (dx, dy) => {
-      this.panX += dx; this.panY += dy;
-      this.clampPan(); this.schedule();
-    }, () => { this.reset(); }, z => {
-      this.zoom = clamp(this.zoom * z, 1, 6);
-      this.clampPan(); this.schedule();
-    });
-    $('#sunReset').addEventListener('click', () => this.reset());
-    $('#sunPlay').addEventListener('click', () => this.togglePlay());
-    $('#sunLabels').addEventListener('click', () => { this.labels = !this.labels; this.schedule(); });
-    $$('.layerbar .chip[data-chan]').forEach(c => c.addEventListener('click', () => {
-      this.channel = c.dataset.chan;
-      if (this.playing) this.togglePlay();
-      this.frames = null; this.frameKey = '';
-      $$('.layerbar .chip[data-chan]').forEach(o => o.classList.toggle('on', o === c));
-      S.settings.sdo = this.channel; saveSettings();
-      this.load();
-    }));
-    if (S.settings.sdo && SDO_CHANNELS[S.settings.sdo]) {
-      this.channel = S.settings.sdo;
-      $$('.layerbar .chip[data-chan]').forEach(o => o.classList.toggle('on', o.dataset.chan === this.channel));
-    }
+    dragHandler($('#sunStage'), dx => { this.drift = 0; this.rot = norm180(this.rot - dx * 0.45); },
+      () => { this.rot = 0; this.drift = 0; });
+    $('#sunReset').addEventListener('click', () => { this.rot = 0; this.drift = 0; });
+    $('#sunLabels').addEventListener('click', () => { this.labels = !this.labels; });
     this.cv = $('#sunCv');
+    this.reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   },
-  reset() { this.zoom = 1; this.panX = 0; this.panY = 0; this.schedule(); },
-  get reduceMotion() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; },
-  clampPan() {
-    const cv = this.cv; if (!cv) return;
-    const lim = Math.min(cv.clientWidth, cv.clientHeight) * (this.zoom - 1) * 0.55;
-    this.panX = clamp(this.panX, -lim, lim);
-    this.panY = clamp(this.panY, -lim, lim);
-  },
-  schedule() { if (!this.raf) this.raf = requestAnimationFrame(() => { this.raf = null; this.draw(); }); },
-  activate() { this.load(); this.startAnim(); this.schedule(); },
-  stop() { this.stopAnim(); },
-
-  /** SDO refreshes every 15 minutes, so bucket the cache-buster to match. */
-  load() {
-    const bucket = Math.floor(Date.now() / (15 * 60000));
-    const key = this.channel + '|' + bucket;
-    if (key === this.imgKey && this.state === 'ready') { this.schedule(); return; }
-    this.imgKey = key; this.state = 'loading'; this.schedule();
-    const im = new Image();
-    im.decoding = 'async';
-    im.onload = () => { if (this.imgKey === key) { this.img = im; this.state = 'ready'; this.schedule(); } };
-    im.onerror = () => { if (this.imgKey === key) { this.state = 'error'; this.schedule(); } };
-    im.src = SDO_BASE + this.channel + '.jpg?t=' + bucket;
+  schedule() { if (this.stopped) this.draw(); },
+  activate() { this.stopped = false; if (this.reduce) { this.draw(); return; } if (!this.raf) this.loop(); },
+  stop() { this.stopped = true; if (this.raf) { cancelAnimationFrame(this.raf); this.raf = null; } },
+  loop() {
+    if (this.stopped) { this.raf = null; return; }
+    this.draw();
+    this.raf = requestAnimationFrame(() => this.loop());
   },
 
   draw() {
@@ -2547,121 +2503,158 @@ const SunView = {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const W = cv.clientWidth, H = cv.clientHeight;
     if (!W || !H) return;
-    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
     const g = cv.getContext('2d');
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, W, H);
-    const ch = SDO_CHANNELS[this.channel];
+    const R = Math.min(W, H) * 0.34, cx = W / 2, cy = H / 2;
+    const t = this.reduce ? 6 : (performance.now() - (this.t0 || (this.t0 = performance.now()))) / 1000;
+    /* the Sun really does turn: about 14.2°/day at the equator */
+    if (!this.reduce) this.drift = (this.drift + 0.0000015) % 360;
 
-    if (this.state !== 'ready' || !this.img) {
-      g.fillStyle = cssVar('--dim');
-      g.font = '13px ' + cssVar('--f-body').split(',')[0].replace(/"/g, '');
-      g.textAlign = 'center';
-      g.fillText(this.state === 'error' ? 'SDO image unavailable right now' : 'Loading the Sun…', W / 2, H / 2);
-      if (this.state === 'error') {
-        g.font = '11px ' + cssVar('--f-body').split(',')[0].replace(/"/g, '');
-        g.fillText('The numbers below still work — they come from NOAA.', W / 2, H / 2 + 20);
-      }
-      $('#sunTag').textContent = ch.label;
-      $('#sunStageVal').textContent = '';
-      return;
-    }
+    drawSunDisc(g, cx, cy, R, t, this.rot + this.drift * 360, this.labels, S.regions || []);
 
-    /* time-lapse playback advances a frame every 380 ms */
-    let frame = this.img;
-    if (this.playing && this.frames && this.frames.length) {
-      const nowMs = performance.now();
-      if (nowMs - this.lastFrameStep > 380) {
-        this.frameIdx = (this.frameIdx + 1) % this.frames.length;
-        this.lastFrameStep = nowMs;
-      }
-      frame = this.frames[this.frameIdx];
-    }
-
-    /* fit the square frame into the stage, then apply pan and zoom */
-    const side = Math.min(W, H) * this.zoom;
-    const x0 = W / 2 - side / 2 + this.panX, y0 = H / 2 - side / 2 + this.panY;
-    g.save();
-    g.beginPath(); g.rect(0, 0, W, H); g.clip();
-    /* Corona glow. Decorative, and deliberately kept outside the
-       photographic disc so it can never be read as instrument data. */
-    const t = this.reduceMotion ? 5 : performance.now() / 1000;
-    const gcx = W / 2 + this.panX, gcy = H / 2 + this.panY, discR = side * ch.disc;
-    g.save();
-    g.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 56; i++) {
-      const seed = hash2(i, 3);
-      const ang = (i / 56) * Math.PI * 2 + t * 0.011 + seed * 0.08;
-      const pulse = 0.7 + 0.3 * Math.sin(t * (0.45 + seed * 0.7) + seed * 11);
-      const len = discR * (0.06 + seed * 0.42) * pulse;
-      const wid = (0.005 + seed * 0.014) * Math.PI;
-      g.beginPath();
-      g.moveTo(gcx + Math.cos(ang - wid) * discR, gcy + Math.sin(ang - wid) * discR);
-      g.lineTo(gcx + Math.cos(ang) * (discR + len), gcy + Math.sin(ang) * (discR + len));
-      g.lineTo(gcx + Math.cos(ang + wid) * discR, gcy + Math.sin(ang + wid) * discR);
-      g.closePath();
-      const rg = g.createRadialGradient(gcx, gcy, discR, gcx, gcy, discR + len);
-      rg.addColorStop(0, 'rgba(255,206,124,' + (0.15 * pulse).toFixed(3) + ')');
-      rg.addColorStop(1, 'rgba(255,170,80,0)');
-      g.fillStyle = rg; g.fill();
-    }
-    const breathe = 0.20 + 0.05 * Math.sin(t * 0.6);
-    const gl = g.createRadialGradient(gcx, gcy, discR * 0.92, gcx, gcy, discR * 1.75);
-    gl.addColorStop(0, 'rgba(255,168,72,' + breathe.toFixed(3) + ')');
-    gl.addColorStop(1, 'rgba(255,140,60,0)');
-    g.fillStyle = gl; g.fillRect(0, 0, W, H);
-    g.restore();
-    g.drawImage(frame, x0, y0, side, side);
-
-    /* active regions, at their reported heliographic positions */
-    const regs = this.playing ? [] : (S.regions || []);
-    const cx = x0 + side / 2, cy = y0 + side / 2, R = side * ch.disc;
-    let onDisc = 0;
-    const marks = [];
-    for (const r of regs) {
-      const b = RAD * r.lat, l = RAD * r.lon;          // longitude is west-positive, as SDO is oriented
-      const px = Math.cos(b) * Math.sin(l), py = Math.sin(b), pz = Math.cos(b) * Math.cos(l);
-      if (pz <= 0.02) continue;
-      onDisc++;
-      const sx = cx + px * R, sy = cy - py * R;
-      if (sx < -40 || sx > W + 40 || sy < -40 || sy > H + 40) continue;
-      const rad = clamp(Math.sqrt(Math.max(r.area, 10)) * R * 0.0021, 3, R * 0.12);
-      g.beginPath(); g.arc(sx, sy, rad, 0, 7);
-      g.strokeStyle = 'rgba(120,255,210,.85)'; g.lineWidth = 1.4; g.stroke();
-      marks.push({ x: sx, y: sy, r: rad, n: r.region, area: r.area, delta: /delta/i.test(r.magClass || '') });
-    }
-
-    if (this.labels && marks.length) {
-      g.font = '10px ' + cssVar('--f-mono').replace(/"/g, '');
-      g.textAlign = 'center'; g.textBaseline = 'middle';
-      marks.sort((a, b) => b.area - a.area);
-      const placed = []; let shown = 0;
-      for (const m of marks) {
-        if (shown >= 8) break;
-        const label = String(m.n);
-        const w2 = g.measureText(label).width / 2 + 3, ly = m.y - m.r - 9;
-        const box = { l: m.x - w2, r: m.x + w2, t: ly - 7, b: ly + 7 };
-        if (placed.some(q => box.l < q.r && box.r > q.l && box.t < q.b && box.b > q.t)) continue;
-        placed.push(box); shown++;
-        g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.7)';
-        g.strokeText(label, m.x, ly);
-        /* a delta region is the kind that produces X-class flares */
-        g.fillStyle = m.delta ? '#FF5C7A' : 'rgba(120,255,210,.95)';
-        g.fillText(label, m.x, ly);
-      }
-      g.textBaseline = 'alphabetic';
-    }
-    g.restore();
-
-    $('#sunTag').textContent = ch.label;
-    $('#sunStageVal').textContent = this.playing
-      ? 'last 8 hours · frame ' + (this.frameIdx + 1) + '/' + (this.frames ? this.frames.length : 0)
-      : (this.zoom > 1.05 ? fmtN(this.zoom, 1) + '×  ·  ' : '')
-        + (regs.length ? onDisc + ' regions facing us' : 'no numbered regions');
-    const hint = $('#sunHint');
-    if (hint && !hint.classList.contains('fade')) hint.textContent = ch.note;
+    const n = (S.regions || []).length;
+    $('#sunStageVal').textContent = this.rot
+      ? fmtN(Math.abs(this.rot), 0) + '° ' + (this.rot >= 0 ? 'E' : 'W')
+      : (n ? n + (n === 1 ? ' active region' : ' active regions') : 'no numbered regions');
   }
 };
+
+/** Shared by the hero and the small portrait in the star view. */
+function drawSunDisc(g, cx, cy, R, t, rot, labels, regs) {
+  /* corona: streamers that drift and breathe */
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  const rays = Math.round(clamp(R * 0.5, 32, 80));
+  for (let i = 0; i < rays; i++) {
+    const seed = hash2(i, 3);
+    const ang = (i / rays) * Math.PI * 2 + seed * 0.1 + t * 0.011;
+    const pulse = 0.68 + 0.32 * Math.sin(t * (0.45 + seed * 0.75) + seed * 11);
+    const len = R * (0.09 + seed * 0.60) * pulse;
+    const wid = (0.005 + seed * 0.015) * Math.PI;
+    g.beginPath();
+    g.moveTo(cx + Math.cos(ang - wid) * R, cy + Math.sin(ang - wid) * R);
+    g.lineTo(cx + Math.cos(ang) * (R + len), cy + Math.sin(ang) * (R + len));
+    g.lineTo(cx + Math.cos(ang + wid) * R, cy + Math.sin(ang + wid) * R);
+    g.closePath();
+    const rg = g.createRadialGradient(cx, cy, R, cx, cy, R + len);
+    rg.addColorStop(0, 'rgba(255,198,112,' + (0.10 * pulse).toFixed(3) + ')');
+    rg.addColorStop(1, 'rgba(255,150,70,0)');
+    g.fillStyle = rg; g.fill();
+  }
+  const halo = g.createRadialGradient(cx, cy, R * 0.95, cx, cy, R * 1.5);
+  halo.addColorStop(0, 'rgba(255,186,96,' + (0.20 + 0.04 * Math.sin(t * 0.6)).toFixed(3) + ')');
+  halo.addColorStop(0.5, 'rgba(255,166,80,.05)');
+  halo.addColorStop(1, 'rgba(255,150,70,0)');
+  g.fillStyle = halo; g.beginPath(); g.arc(cx, cy, R * 1.5, 0, 7); g.fill();
+  g.restore();
+
+  /* photosphere */
+  g.save();
+  g.beginPath(); g.arc(cx, cy, R, 0, 7); g.clip();
+  const body = g.createRadialGradient(cx, cy, 0, cx, cy, R);
+  body.addColorStop(0, '#FFFCEE');
+  body.addColorStop(0.45, '#FFEFB8');
+  body.addColorStop(0.82, '#FFD071');
+  body.addColorStop(1, '#F0A63F');
+  g.fillStyle = body; g.fillRect(cx - R, cy - R, 2 * R, 2 * R);
+
+  /* granulation at two scales, drifting slowly with rotation */
+  const shift = (rot / 360) * R * 2;
+  for (const [count, sz, alpha] of [[Math.round(R * 7), 0.013, 0.075], [Math.round(R * 2.2), 0.030, 0.045]]) {
+    for (let i = 0; i < count; i++) {
+      const a = hash2(i, 7) * 7, rr = Math.sqrt(hash2(i, 13)) * R;
+      let x = cx + Math.cos(a) * rr - shift;
+      const y = cy + Math.sin(a) * rr;
+      const span = 2 * R;
+      x = cx - R + (((x - (cx - R)) % span) + span) % span;
+      const s = R * (sz * 0.5 + hash2(i, 19) * sz);
+      g.beginPath(); g.arc(x, y, s, 0, 7);
+      g.fillStyle = hash2(i, 23) > 0.5
+        ? 'rgba(255,248,220,' + alpha.toFixed(3) + ')'
+        : 'rgba(206,132,52,' + (alpha * 0.85).toFixed(3) + ')';
+      g.fill();
+    }
+  }
+  /* faculae: bright networks that show up near the limb */
+  for (let i = 0; i < Math.round(R * 0.9); i++) {
+    const a = hash2(i, 31) * 7, rr = (0.72 + 0.26 * hash2(i, 37)) * R;
+    const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
+    g.beginPath(); g.arc(x, y, R * (0.012 + hash2(i, 41) * 0.022), 0, 7);
+    g.fillStyle = 'rgba(255,253,238,.13)'; g.fill();
+  }
+
+  /* real sunspot groups */
+  const marks = [];
+  for (const r of regs) {
+    const b = RAD * r.lat, l = RAD * (r.lon + rot);
+    const px = Math.cos(b) * Math.sin(l), py = Math.sin(b), pz = Math.cos(b) * Math.cos(l);
+    if (pz <= 0.04) continue;
+    const sx = cx + px * R, sy = cy - py * R;
+    const rad = clamp(Math.sqrt(Math.max(r.area, 10)) * R * 0.0030, 1.3, R * 0.14);
+    g.save();
+    g.translate(sx, sy); g.scale(Math.max(pz, 0.14), 1);
+    g.beginPath(); g.arc(0, 0, rad * 2.0, 0, 7);
+    g.fillStyle = 'rgba(176,108,40,.42)'; g.fill();          // penumbra
+    g.beginPath(); g.arc(0, 0, rad, 0, 7);
+    g.fillStyle = 'rgba(36,18,6,.90)'; g.fill();             // umbra
+    /* a big group is several spots, not one blob */
+    if (r.spots > 4 && rad > 3) {
+      for (let k = 0; k < Math.min(5, Math.round(r.spots / 4)); k++) {
+        const ax = (hash2(k, r.region % 97) - 0.5) * rad * 3.6;
+        const ay = (hash2(k, (r.region + 11) % 97) - 0.5) * rad * 2.2;
+        g.beginPath(); g.arc(ax, ay, rad * (0.22 + hash2(k, 53) * 0.3), 0, 7);
+        g.fillStyle = 'rgba(36,18,6,.75)'; g.fill();
+      }
+    }
+    g.restore();
+    marks.push({ x: sx, y: sy, r: rad, n: r.region, area: r.area, delta: /delta/i.test(r.magClass || '') });
+  }
+  /* limb darkening pass over everything, so spots dim near the edge too */
+  const lim = g.createRadialGradient(cx, cy, R * 0.35, cx, cy, R);
+  lim.addColorStop(0, 'rgba(150,72,14,0)');
+  lim.addColorStop(0.75, 'rgba(150,72,14,.10)');
+  lim.addColorStop(1, 'rgba(132,60,10,.34)');
+  g.fillStyle = lim; g.fillRect(cx - R, cy - R, 2 * R, 2 * R);
+  g.restore();
+
+  /* prominences on the limb */
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  for (let k = 0; k < 9; k++) {
+    const seed = hash2(k, 29);
+    if (seed < 0.42) continue;
+    const ang = seed * Math.PI * 2 + t * 0.013;
+    const h = R * (0.035 + seed * 0.09) * (0.6 + 0.4 * Math.sin(t * (0.7 + seed) + k * 3));
+    const sp = 0.035 + seed * 0.045;
+    g.beginPath();
+    g.moveTo(cx + Math.cos(ang - sp) * R * 0.99, cy + Math.sin(ang - sp) * R * 0.99);
+    g.quadraticCurveTo(cx + Math.cos(ang) * (R + h * 2.6), cy + Math.sin(ang) * (R + h * 2.6),
+                       cx + Math.cos(ang + sp) * R * 0.99, cy + Math.sin(ang + sp) * R * 0.99);
+    g.strokeStyle = 'rgba(255,138,116,.42)';
+    g.lineWidth = Math.max(1, R * 0.014); g.lineCap = 'round'; g.stroke();
+  }
+  g.restore();
+
+  if (labels && marks.length && R > 60) {
+    g.font = '10px ' + cssVar('--f-mono').replace(/"/g, '');
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    marks.sort((a, b) => b.area - a.area);
+    const placed = []; let shown = 0;
+    for (const m of marks) {
+      if (shown >= 6 || m.r < 2) break;
+      const label = String(m.n), w2 = g.measureText(label).width / 2 + 3, ly = m.y - m.r * 2 - 8;
+      const box = { l: m.x - w2, r: m.x + w2, t: ly - 7, b: ly + 7 };
+      if (placed.some(q => box.l < q.r && box.r > q.l && box.t < q.b && box.b > q.t)) continue;
+      placed.push(box); shown++;
+      g.lineWidth = 3; g.strokeStyle = 'rgba(70,34,4,.75)'; g.strokeText(label, m.x, ly);
+      g.fillStyle = m.delta ? '#FF5C7A' : 'rgba(255,246,225,.95)';
+      g.fillText(label, m.x, ly);
+    }
+    g.textBaseline = 'alphabetic';
+  }
+}
 
 async function loadSun() {
   const jobs = [
@@ -3116,7 +3109,7 @@ function boot() {
     if (document.hidden) return;
     if (currentMode === 'stars') SkyView.schedule();
     if (currentMode === 'moon') MoonView.schedule();
-    if (currentMode === 'sun') SunView.load();
+    if (currentMode === 'sun') { loadSun(); SunView.schedule(); }
   }, 60000);
 }
 
@@ -3241,78 +3234,6 @@ function wireMoonTexture() {
   });
 }
 
-/* ============================================================
-   SUN — corona animation and time-lapse
-   The disc is a real SDO photograph. The glow drawn around it is
-   decorative, kept clearly outside the photographic disc so it can
-   never be mistaken for data. The time-lapse below is real: eight
-   frames of the last eight hours from the Helioviewer API.
-   ============================================================ */
-const HV_SOURCE = { '0304': 13, '0171': 10, '0193': 11 };
-const HV_LAYER = { '0304': '304', '0171': '171', '0193': '193' };
-
-Object.assign(SunView, {
-  anim: null, playing: false, frames: null, frameKey: '', frameIdx: 0, lastFrameStep: 0, fetching: false,
-
-  startAnim() {
-    if (this.anim || this.reduceMotion) return;
-    const step = () => { this.anim = requestAnimationFrame(step); this.draw(); };
-    this.anim = requestAnimationFrame(step);
-  },
-  stopAnim() { if (this.anim) { cancelAnimationFrame(this.anim); this.anim = null; } },
-
-  /** Eight frames across the last eight hours, fetched once per channel. */
-  async loadLapse() {
-    const src = HV_SOURCE[this.channel];
-    if (!src) { toast('Time-lapse is available on the 304, 171 and 193 channels.'); return false; }
-    const key = this.channel + '|' + Math.floor(Date.now() / (30 * 60000));
-    if (this.frameKey === key && this.frames && this.frames.length) return true;
-    if (this.fetching) return false;
-    this.fetching = true;
-    toast('Fetching the last eight hours…');
-    const now = Date.now(), out = [];
-    const jobs = [];
-    for (let i = 7; i >= 0; i--) {
-      const d = new Date(now - i * 3600000).toISOString().replace(/\.\d+Z$/, 'Z');
-      const url = 'https://api.helioviewer.org/v2/takeScreenshot/?imageScale=4.8'
-        + '&layers=' + encodeURIComponent('[SDO,AIA,AIA,' + HV_LAYER[this.channel] + ',1,100]')
-        + '&date=' + encodeURIComponent(d)
-        + '&x1=-1228&y1=-1228&x2=1228&y2=1228&display=true&watermark=false';
-      jobs.push(new Promise(res => {
-        const im = new Image();
-        im.crossOrigin = 'anonymous';
-        im.onload = () => res(im);
-        im.onerror = () => res(null);
-        im.src = url;
-        setTimeout(() => res(null), 25000);
-      }));
-    }
-    const got = (await Promise.all(jobs)).filter(Boolean);
-    this.fetching = false;
-    if (got.length < 3) { toast('Time-lapse unavailable right now'); return false; }
-    this.frames = got; this.frameKey = key; this.frameIdx = 0;
-    toast(got.length + ' frames loaded');
-    return true;
-  },
-
-  async togglePlay() {
-    if (this.playing) {
-      this.playing = false;
-      $('#sunPlay').textContent = '▶';
-      $('#sunPlay').classList.remove('on');
-      this.schedule();
-      return;
-    }
-    const ok = await this.loadLapse();
-    if (!ok) return;
-    this.playing = true;
-    this.lastFrameStep = performance.now();
-    $('#sunPlay').textContent = '❚❚';
-    $('#sunPlay').classList.add('on');
-    this.startAnim();
-  }
-});
-
 
 /* ============================================================
    SKY RENDERING HELPERS
@@ -3412,7 +3333,7 @@ function drawPortrait(cv, obj) {
   }
   if (obj.kind === 'planet') drawPlanetBody(g, cx, cy, R, obj);
   else if (obj.kind === 'star') drawStarBody(g, cx, cy, R, obj);
-  else if (obj.kind === 'sun') drawSunPortrait(g, cx, cy, R * 0.78);
+  else if (obj.kind === 'sun') drawSunDisc(g, cx, cy, R * 0.74, performance.now() / 1000, SunView.rot, false, S.regions || []);
   else if (obj.kind === 'moon') drawMoonPortrait(g, cx, cy, R * 0.92);
 }
 
@@ -3826,13 +3747,25 @@ Object.assign(SkyView, {
       }
     }
 
-    /* ground silhouette last, so everything sets behind it */
-    g.beginPath();
-    let gs = false;
-    horizon.forEach(pt => { if (!pt) { gs = false; return; } gs ? g.lineTo(pt.x, pt.y) : (g.moveTo(pt.x, pt.y), gs = true); });
-    if (gs) {
-      g.lineTo(W + 40, H + 40); g.lineTo(-40, H + 40); g.closePath();
-      g.fillStyle = 'rgba(3,5,11,.92)'; g.fill();
+    /* Ground silhouette. The horizon polyline breaks into pieces whenever part
+       of it falls outside the projection, and closing a broken path down to the
+       bottom corners produced stray black wedges across the sky. So: take only
+       the visible points, sort them by x, and fill only when they actually span
+       the view as a single left-to-right edge. */
+    const gp = horizon.filter(Boolean).slice().sort((u, v) => u.x - v.x);
+    if (gp.length > 24 && this.alt < 62) {
+      const spanX = gp[gp.length - 1].x - gp[0].x;
+      let mono = true;
+      for (let i = 1; i < gp.length; i++) if (gp[i].y - gp[i - 1].y > H * 0.55) { mono = false; break; }
+      if (spanX > W * 0.55 && mono) {
+        g.beginPath();
+        g.moveTo(gp[0].x - 60, gp[0].y);
+        for (const pt of gp) g.lineTo(pt.x, pt.y);
+        g.lineTo(gp[gp.length - 1].x + 60, gp[gp.length - 1].y);
+        g.lineTo(W + 60, H + 60); g.lineTo(-60, H + 60);
+        g.closePath();
+        g.fillStyle = 'rgba(3,5,11,.94)'; g.fill();
+      }
     }
     g.font = '11px ' + cssVar('--f-display').split(',')[0].replace(/"/g, '');
     g.textAlign = 'center';
@@ -3927,88 +3860,6 @@ function renderSkyDetail(obj) {
    an illustration, but the sunspot positions on it are the real
    ones from NOAA's Solar Region Summary.
    ============================================================ */
-function drawSunPortrait(g, cx, cy, R) {
-  const t = performance.now() / 1000;
-
-  /* corona */
-  g.save();
-  g.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 44; i++) {
-    const seed = hash2(i, 3);
-    const ang = (i / 44) * Math.PI * 2 + seed * 0.1 + t * 0.012;
-    const pulse = 0.7 + 0.3 * Math.sin(t * (0.5 + seed * 0.8) + seed * 11);
-    const len = R * (0.10 + seed * 0.55) * pulse;
-    const wid = (0.007 + seed * 0.018) * Math.PI;
-    g.beginPath();
-    g.moveTo(cx + Math.cos(ang - wid) * R, cy + Math.sin(ang - wid) * R);
-    g.lineTo(cx + Math.cos(ang) * (R + len), cy + Math.sin(ang) * (R + len));
-    g.lineTo(cx + Math.cos(ang + wid) * R, cy + Math.sin(ang + wid) * R);
-    g.closePath();
-    const rg = g.createRadialGradient(cx, cy, R, cx, cy, R + len);
-    rg.addColorStop(0, 'rgba(255,196,110,' + (0.17 * pulse).toFixed(3) + ')');
-    rg.addColorStop(1, 'rgba(255,150,70,0)');
-    g.fillStyle = rg; g.fill();
-  }
-  const halo = g.createRadialGradient(cx, cy, R * 0.9, cx, cy, R * 1.8);
-  halo.addColorStop(0, 'rgba(255,178,86,.30)');
-  halo.addColorStop(1, 'rgba(255,150,70,0)');
-  g.fillStyle = halo; g.beginPath(); g.arc(cx, cy, R * 1.8, 0, 7); g.fill();
-  g.restore();
-
-  /* photosphere with limb darkening, I(mu) = 1 - u(1 - mu) */
-  g.save();
-  g.beginPath(); g.arc(cx, cy, R, 0, 7); g.clip();
-  const body = g.createRadialGradient(cx, cy, 0, cx, cy, R);
-  body.addColorStop(0, '#FFF3CE');
-  body.addColorStop(0.55, '#FFE49A');
-  body.addColorStop(0.88, '#F6B653');
-  body.addColorStop(1, '#D98A34');
-  g.fillStyle = body; g.fillRect(cx - R, cy - R, 2 * R, 2 * R);
-  /* granulation */
-  for (let i = 0; i < 340; i++) {
-    const a = hash2(i, 7) * 7, rr = Math.sqrt(hash2(i, 13)) * R;
-    const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
-    const s = R * (0.018 + hash2(i, 19) * 0.030);
-    g.beginPath(); g.arc(x, y, s, 0, 7);
-    g.fillStyle = hash2(i, 23) > 0.5 ? 'rgba(255,246,214,.16)' : 'rgba(214,140,58,.13)';
-    g.fill();
-  }
-  /* real active regions from NOAA, foreshortened towards the limb */
-  for (const r of (S.regions || [])) {
-    const b = RAD * r.lat, l = RAD * r.lon;
-    const px = Math.cos(b) * Math.sin(l), py = Math.sin(b), pz = Math.cos(b) * Math.cos(l);
-    if (pz <= 0.05) continue;
-    const sx = cx + px * R, sy = cy - py * R;
-    const rad = clamp(Math.sqrt(Math.max(r.area, 10)) * R * 0.0034, 1.4, R * 0.15);
-    g.save();
-    g.translate(sx, sy); g.scale(Math.max(pz, 0.15), 1);
-    g.beginPath(); g.arc(0, 0, rad * 1.9, 0, 7);
-    g.fillStyle = 'rgba(168,102,36,.45)'; g.fill();
-    g.beginPath(); g.arc(0, 0, rad, 0, 7);
-    g.fillStyle = 'rgba(40,20,6,.88)'; g.fill();
-    g.restore();
-  }
-  g.restore();
-
-  /* prominences arcing off the limb */
-  g.save();
-  g.globalCompositeOperation = 'lighter';
-  for (let k = 0; k < 7; k++) {
-    const seed = hash2(k, 29);
-    if (seed < 0.4) continue;
-    const ang = seed * Math.PI * 2 + t * 0.014;
-    const h = R * (0.04 + seed * 0.10) * (0.6 + 0.4 * Math.sin(t * (0.7 + seed) + k * 3));
-    const sp = 0.035 + seed * 0.045;
-    g.beginPath();
-    g.moveTo(cx + Math.cos(ang - sp) * R * 0.99, cy + Math.sin(ang - sp) * R * 0.99);
-    g.quadraticCurveTo(cx + Math.cos(ang) * (R + h * 2.6), cy + Math.sin(ang) * (R + h * 2.6),
-                       cx + Math.cos(ang + sp) * R * 0.99, cy + Math.sin(ang + sp) * R * 0.99);
-    g.strokeStyle = 'rgba(255,124,108,.48)'; g.lineWidth = Math.max(1.1, R * 0.020);
-    g.lineCap = 'round'; g.stroke();
-  }
-  g.restore();
-}
-
 /** The Moon portrait, rendered with the same sphere shader as the Moon tab. */
 function drawMoonPortrait(g, cx, cy, R) {
   const p = activePlace();
@@ -4035,7 +3886,7 @@ function drawMoonPortrait(g, cx, cy, R) {
   const img = og.createImageData(N, N);
   const half = N / 2, tex = MoonTex.state === 'ready';
   const buf = [0, 0, 0];
-  const earthshine = 0.055 * (1 - m.fraction);
+  const earthshine = 0.030 * Math.pow(1 - m.fraction, 2.2);
   for (let py = 0; py < N; py++) {
     const ny = (py + 0.5 - half) / half;
     for (let px = 0; px < N; px++) {
@@ -4051,9 +3902,9 @@ function drawMoonPortrait(g, cx, cy, R) {
       const lon = Math.atan2(mx, mz) * DEG;
       const dot = mx * sunV[0] + my * sunV[1] + mz * sunV[2];
       const lit = dot < 0 ? 0 : Math.pow(dot, 0.62);
-      const term = smoothstep(-0.035, 0.035, dot);
+      const term = smoothstep(-0.022, 0.022, dot);
       const I = clamp(lit * term + earthshine * (1 - term), 0, 1);
-      const shade = 0.24 + 0.76 * I;
+      const shade = 0.02 + 0.98 * I;
       if (tex) {
         MoonTex.at(lat, lon, buf);
         img.data[o] = clamp(buf[0] * shade * 1.06, 0, 255);

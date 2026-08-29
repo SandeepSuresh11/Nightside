@@ -56,30 +56,13 @@ Two libraries load from a CDN at runtime: Leaflet 1.9.4 (map) and IBM Plex (font
 
 ## Photographic imagery
 
-### Sun — live, no setup
+### Sun — drawn, always live
 
-The Sun view is now real photography rather than a drawing. NASA's Solar Dynamics Observatory publishes near-real-time full-disc JPEGs every 15 minutes, documented at `sdo.gsfc.nasa.gov/data/bestpractice.php`:
+The Sun view is a continuous drawn representation rather than a photograph. It has granulation at two scales, limb darkening from the real I(mu) = 1 − u(1 − mu) law, faculae near the limb, prominences, a breathing corona, and the surface turning at the Sun's real equatorial rate.
 
-```
-https://sdo.gsfc.nasa.gov/assets/img/latest/latest_<res>_<channel>.jpg
-res:     512 | 1024 | 2048 | 4096          (the app uses 1024)
-channel: 0094 0131 0171 0193 0211 0304 0335 1600 1700
-         HMIB HMII HMID HMIBC HMIIF HMIIC
-```
+The sunspots on it are real: every group comes from NOAA's Solar Region Summary at its reported heliographic latitude, longitude and area, foreshortened toward the limb, and drawn as a cluster when the report says the group has many spots.
 
-Five are wired to the chips: 304 Å, 171 Å, 193 Å, HMI white light, HMI magnetogram. Public domain, no key. The cache-buster is bucketed to 15-minute windows so the browser reuses the image within a window instead of refetching on every redraw, and the service worker passes these straight to the network rather than caching them.
-
-**Overlay alignment.** The NOAA region circles are positioned using a disc-radius fraction per instrument, derived from the plate scales: AIA is 0.6″/px and HMI 0.5″/px, so at 4096 px a ~959″ solar radius lands at 0.390 and 0.468 of the frame width. Those are the constants in `SDO_CHANNELS`. Switch to **White light** — if the circles do not sit on the visible spots, nudge that one number.
-
-*Caveat: SDO posted a data-storage hardware failure notice recently, so the feed can drop out. The view degrades to a message and every number below it still works, because those come from NOAA rather than SDO.*
-
-### Sun — time-lapse
-
-The ▶ button plays the last eight hours as eight real frames from the Helioviewer API (`api.helioviewer.org/v2/takeScreenshot`), free and keyless. Available on the 304, 171 and 193 channels only — the HMI layer syntax was not verified, so those channels do not offer it rather than failing oddly.
-
-Fetched only on demand, cached per channel for 30 minutes, because Helioviewer's docs ask callers to cache rather than regenerate. If fewer than three frames come back it says so and stays on the still.
-
-The glow around the disc is drawn by the app. It is deliberately kept outside the photographic disc so it cannot be mistaken for instrument data, and the guide says so in the app.
+The earlier build used live NASA SDO photography with five channel chips and a Helioviewer time-lapse button. Both are gone — a still photograph is not "live", and one always-running view beats a channel picker.
 
 ### Moon — pick a photo
 
@@ -116,6 +99,8 @@ I could not download and convert one for you: the sandbox I build in only reache
 
 **What is real in the sky view:** star positions, spectral classes and distances; planet positions; the Milky Way band from the galactic equator, graded so the Sagittarius bulge is far brighter than the anticentre; atmospheric extinction using Kasten-Young airmass at roughly 0.2 magnitudes per airmass; scintillation stronger near the horizon; sky brightness from the Sun's depression and from moonlight.
 
+**Ground silhouette bug.** The horizon polyline breaks into pieces whenever part of it falls outside the projection, and closing that broken path down to the bottom corners produced stray black wedges across the sky — visible as a bar straight through the middle of the view. The ground is now filled only from the visible horizon points sorted by x, and only when they actually span the view as a single left-to-right edge.
+
 **What is not:** the ~1500 faint background stars are scenery, added because 76 stars makes any sky look empty. They are not catalogue positions, are never labelled and cannot be tapped. Their density does rise towards the galactic plane, which is true of the real sky. The app states this in the guide.
 
 ## Rendering notes
@@ -123,6 +108,8 @@ I could not download and convert one for you: the sandbox I build in only reache
 The Moon is drawn per-pixel, which is where most of the tuning went.
 
 **Compositing.** `putImageData` replaces the destination outright rather than blending, so drawing the Sun's disc that way punched a transparent square through the corona behind it — which read as a black box. That is moot for the Sun now that it is real imagery, but the Moon renders into an offscreen canvas and lands with `drawImage` for the same reason.
+
+**Moon shading.** Two levels were wrong at first. Earthshine was set high enough to light the entire unlit hemisphere, and separately a 0.14 ambient floor in the shading term meant the night side was never darker than 14% grey — between them, every crescent rendered as grey mush. Earthshine is now scaled as (1−k)^2.2 so it only appears near new, and the ambient floor is gone. Phase geometry was verified separately: a waxing Moon lights the selenographic-east limb (Mare Crisium first) and a waning Moon lights the west, which is what the renderer does.
 
 **Cost.** The Moon shader evaluates 28 named features per pixel. At full device resolution on a high-DPI phone that is over 200,000 pixels; it now renders into a fixed 328 px buffer (168 px while you drag) and scales up, cutting the work by 2.5× at rest and nearly 10× mid-drag. Features are precomputed into unit vectors with a cosine cull so most of them skip the `acos` entirely.
 
