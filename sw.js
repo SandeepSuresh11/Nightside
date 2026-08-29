@@ -4,7 +4,7 @@
    a stale cache. Data is network-first with a cached fallback, which is what
    lets the app open and still show you last night's numbers with no signal. */
 
-const BUILD = '2026-08-28-1';
+const BUILD = '2026-08-29-3';
 const SHELL = 'ns-shell-' + BUILD;
 const LIB   = 'ns-lib-' + BUILD;
 const DATA  = 'ns-data';

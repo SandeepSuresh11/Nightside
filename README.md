@@ -1,6 +1,6 @@
 # Nightside
 
-A free aurora forecast, map and alert app. Installs to your phone's home screen and runs like a native app. No account, no server, no paid tier, no tracking.
+A free aurora, moon, sun and star app. Installs to your phone's home screen and runs like a native app. No account, no server, no paid tier, no tracking.
 
 Built as a PWA rather than a store app because that avoids the $25 Play Console fee, the review queue, and any build toolchain — and it installs on both Android and iPhone from the same URL.
 
@@ -41,9 +41,30 @@ Once installed it opens full screen with no browser chrome.
 | `sw.js` | Service worker. Network-first for the app shell, cached fallback for data. |
 | `icon-*.png` | Home screen icons, including a maskable variant for Android's adaptive icons. |
 
+## Modes
+
+| Mode | Interactive view | Data behind it |
+|---|---|---|
+| Aurora | Live curtain header driven by current Kp, plus a Draw tab | NOAA Kp, OVATION, solar wind, Open-Meteo cloud |
+| Moon | Draggable sphere, real phase and terminator, 28 named features at true selenographic coordinates | Computed on-device; libration included |
+| Sun | Draggable disc with limb darkening, active regions plotted at reported heliographic positions | NOAA Solar Region Summary, F10.7, GOES X-ray |
+| Stars | Draggable sky, 76 bright stars, 6 planets, Milky Way band, constellation lines | Catalogue positions + JPL Keplerian elements |
+
 Two libraries load from a CDN at runtime: Leaflet 1.9.4 (map) and IBM Plex (fonts). Both are cached by the service worker after first load. If either CDN is unreachable the map degrades to an error and everything else keeps working.
 
 ---
+
+## Draw tab
+
+Sketch a band across the canvas and it becomes a live curtain. Undo, Erase all, a ridge silhouette toggle, and Save image (writes a PNG to your downloads).
+
+It is a toy, but the physics is not made up:
+
+- **Rays hang vertically** regardless of which way you draw the band, because real aurora is field-aligned.
+- **Colour is layered by altitude.** Green oxygen at 100–150 km is the body. The red 630 nm crown sits *above* it at 200–400 km, and only appears at Kp 4.5+. The purple-pink nitrogen fringe rides the lower edge and only shows at Kp 5.5+.
+- **Brightness follows the live Kp.** Draw on a quiet night and you get thin green arcs; draw during a storm and the same stroke gains a crown.
+
+The animation loop only runs while the tab is open, and honours `prefers-reduced-motion` by rendering a single static frame instead.
 
 ## 3. Where the data comes from
 
@@ -60,11 +81,16 @@ Every source is public and free. No API keys anywhere in the code.
 | 27-day outlook | `services.swpc.noaa.gov/text/27-day-outlook.txt` | Long-range planning |
 | Hourly cloud cover | `api.open-meteo.com/v1/forecast` | Cloud, temperature, wind |
 | Place search | `geocoding-api.open-meteo.com/v1/search` | Adding locations by name |
-| Map tiles | `basemaps.cartocdn.com` (dark_all) | Base map, OSM data |
+| Solar regions | `services.swpc.noaa.gov/json/solar_regions.json` | Active regions on the Sun view |
+| F10.7 radio flux | `services.swpc.noaa.gov/json/f107_cm_flux.json` | Solar activity level |
+| GOES X-ray | `services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json` | Current flare class |
+| Map tiles | Esri ArcGIS Online, or `tile.openstreetmap.org` | Base map — all keyless |
 
 **Verified against the live endpoints:** the Kp forecast JSON format was checked directly and the parser handles both shapes SWPC uses (array-of-objects and header-row-plus-rows).
 
-**Not yet verified live:** the `27-day-outlook.txt` and `alerts.json` URLs are the documented SWPC product paths but were not fetched during the build. Both are wrapped in try/catch and fail with an honest message in the UI rather than breaking the page. If either 404s on first run, the fix is a one-line URL change in the `SRC` object near the top of the script.
+**Basemap change, August 2026.** CARTO began requiring an API key for its raster basemaps and watermarks unauthenticated tiles. The app now defaults to Esri's Dark Gray Canvas, with Esri World Imagery and standard OpenStreetMap as alternatives in the Map tab. All three are keyless.
+
+**Not yet verified live:** `27-day-outlook.txt`, `alerts.json`, `solar_regions.json`, `f107_cm_flux.json` and the GOES X-ray path are the documented SWPC product paths but were not fetched during the build. Both are wrapped in try/catch and fail with an honest message in the UI rather than breaking the page. If either 404s on first run, the fix is a one-line URL change in the `SRC` object near the top of the script.
 
 NOAA data is US Government work and in the public domain. Open-Meteo is free for non-commercial use. Map tiles are © OpenStreetMap contributors, © CARTO.
 
@@ -98,7 +124,23 @@ Geomagnetic latitude uses a centred dipole with the pole at 80.7 °N, 72.7 °W. 
 
 Good to about a degree across most of the northern auroral zone. It runs several degrees optimistic over Iceland and Greenland and a couple of degrees pessimistic in the far south, because a centred dipole cannot represent the offset of the real field. Corrected geomagnetic coordinates would fix it, but need a full IGRF implementation and a coefficient table.
 
-Sun and moon positions were checked against known events — the 3 January 2026 full moon returns 99.8% illumination, London's solar noon altitude comes out 61.9° at the June solstice and 15.1° at the December one.
+### What was checked against known values
+
+| Test | Result | Expected |
+|---|---|---|
+| Full moon 3 Jan 2026 | 99.8% lit | 100% |
+| London solar noon, June solstice | 61.9° | 62.0° |
+| London solar noon, December solstice | 15.1° | 15.1° |
+| London sunrise, equinox | 06:04 UTC | ~06:05 |
+| Sydney day length, June solstice | 9.83 h | ~9.9 |
+| Mercury maximum elongation over a year | 27.7° | ≤28° |
+| Venus maximum elongation over a year | 46.8° | ≤47.2° |
+| Jupiter Earth-distance range | 4.23–6.30 AU | 4.2–6.4 |
+| Saturn Earth-distance range | 8.43–10.49 AU | 8.0–11.1 |
+| Galactic centre position | 17h 46m, −28.94° | 17h 45.6m, −28.94° |
+| Polaris altitude at latitude 64.15° | 64.06° | ≈ latitude |
+
+Planet positions come from the JPL approximate Keplerian elements, good to a few arcminutes between 1800 and 2050. Star positions are J2000 catalogue values with no proper-motion correction, which matters for nothing you would do with a phone.
 
 ---
 
