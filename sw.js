@@ -4,7 +4,7 @@
    a stale cache. Data is network-first with a cached fallback, which is what
    lets the app open and still show you last night's numbers with no signal. */
 
-const BUILD = '2026-08-29-5';
+const BUILD = '2026-08-29-9';
 const SHELL = 'ns-shell-' + BUILD;
 const LIB   = 'ns-lib-' + BUILD;
 const DATA  = 'ns-data';
@@ -43,7 +43,8 @@ self.addEventListener('fetch', e => {
   /* Map tiles and place search: straight to the network, never cached. */
   if (url.hostname.endsWith('basemaps.cartocdn.com') || url.hostname.endsWith('arcgisonline.com')
       || url.hostname === 'tile.openstreetmap.org' || url.hostname === 'geocoding-api.open-meteo.com'
-      || url.hostname === 'sdo.gsfc.nasa.gov') return;
+      || url.hostname === 'sdo.gsfc.nasa.gov'
+      || url.hostname === 'api.helioviewer.org') return;
 
   /* Space weather + forecast: fresh if we can, last known if we can't. */
   if (isData(url)) {

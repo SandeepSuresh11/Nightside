@@ -48,7 +48,7 @@ Once installed it opens full screen with no browser chrome.
 | Aurora | Live curtain header driven by current Kp, plus a Draw tab | NOAA Kp, OVATION, solar wind, Open-Meteo cloud |
 | Moon | Draggable sphere, real phase and terminator, 28 named features at true selenographic coordinates | Computed on-device; libration included |
 | Sun | Live NASA SDO photography, five channels, pan and zoom, NOAA active regions circled on top | SDO near-real-time imagery, NOAA Solar Region Summary, F10.7, GOES X-ray |
-| Stars | Draggable sky, 76 bright stars, 6 planets, Milky Way band, constellation lines | Catalogue positions + JPL Keplerian elements |
+| Stars | Draggable sky, tap to select and glide onto an object, illustrated portraits, graded Milky Way | 76 catalogue stars with spectral class and distance, JPL Keplerian elements |
 
 Two libraries load from a CDN at runtime: Leaflet 1.9.4 (map) and IBM Plex (fonts). Both are cached by the service worker after first load. If either CDN is unreachable the map degrades to an error and everything else keeps working.
 
@@ -73,20 +73,50 @@ Five are wired to the chips: 304 Å, 171 Å, 193 Å, HMI white light, HMI magnet
 
 *Caveat: SDO posted a data-storage hardware failure notice recently, so the feed can drop out. The view degrades to a message and every number below it still works, because those come from NOAA rather than SDO.*
 
-### Moon — optional, one file
+### Sun — time-lapse
 
-The Moon is drawn procedurally by default. For a photographic Moon, put an equirectangular lunar map named **`moon.jpg`** next to `index.html`. The app loads it automatically, samples it on the sphere, and keeps the real phase, terminator and libration. If the file is not there it falls back silently and says so in the Moon panel.
+The ▶ button plays the last eight hours as eight real frames from the Helioviewer API (`api.helioviewer.org/v2/takeScreenshot`), free and keyless. Available on the 304, 171 and 193 channels only — the HMI layer syntax was not verified, so those channels do not offer it rather than failing oddly.
 
-Requirements: equirectangular (plate carrée), 2:1 aspect, centred on 0° longitude, north up. 2048×1024 is plenty — the app downsamples anything larger.
+Fetched only on demand, cached per channel for 30 minutes, because Helioviewer's docs ask callers to cache rather than regenerate. If fewer than three frames come back it says so and stays on the still.
 
-Where to get one:
+The glow around the disc is drawn by the app. It is deliberately kept outside the photographic disc so it cannot be mistaken for instrument data, and the guide says so in the app.
+
+### Moon — pick a photo
+
+The Moon is drawn from real feature coordinates by default. To make it photographic, open the Moon tab and use **Choose a lunar map from this phone**. Pick any equirectangular lunar map from your device; it is stored in IndexedDB on that device and never uploaded. Phase, terminator and libration keep working — only the surface changes.
+
+The app also looks for a `moon.jpg` sitting next to `index.html`, if you would rather commit one to the repo.
+
+Requirements: equirectangular (plate carrée), 2:1 aspect, centred on 0° longitude, north up. 2048×1024 is plenty — anything larger is downsampled.
 
 | Source | Notes |
 |---|---|
-| NASA SVS CGI Moon Kit — `svs.gsfc.nasa.gov/4720` | Authoritative, public domain, built from the LROC WAC mosaic. Supplied as 16-bit TIFF and EXR, so it needs converting to JPEG and resizing. |
+| NASA SVS CGI Moon Kit — `svs.gsfc.nasa.gov/4720` | Authoritative, public domain, from the LROC WAC mosaic. Ships as 16-bit TIFF and EXR, so it needs converting. |
 | NASA SVS 14959 | Moon models for web and AR; smaller, more web-ready assets. |
+| USGS Astrogeology — `astrogeology.usgs.gov` LROC WAC global mosaic | Downloadable at several reduced resolutions, already equirectangular. |
 
-I could not download and convert this for you — the sandbox I build in only reaches a package-registry allowlist, not NASA. So this is the one manual step.
+I could not download and convert one for you: the sandbox I build in only reaches a package-registry allowlist, not NASA or USGS.
+
+## Stars mode
+
+**Tap to select.** Tapping a star or planet glides the view onto it and opens a card: altitude and direction, rise or set time, and for planets the real distance, apparent angular size and illuminated fraction.
+
+**Portraits are illustrations, not photographs**, and the card says so. The Sun portrait has a pulsing corona, granulation, limb darkening, prominences on the limb, and the *real* NOAA sunspot groups placed at their reported heliographic positions. The Moon portrait reuses the same sphere shader as the Moon tab, so it carries the true phase, libration and surface — including your own photographic map if you loaded one. They are built from real numbers though — planet radii, the computed phase angle, Jupiter's belts and Great Red Spot near 22°S, Saturn's rings at their real radii with the Cassini Division between 1.95 and 2.03 Saturn radii, Mars's polar cap and dark albedo regions.
+
+**The phase terminator was wrong on the first pass** and worth describing, because it looked plausible while being badly broken. The terminator is an ellipse whose semi-minor axis is R·|1−2k| for illuminated fraction k, and the canvas sweep flag decides which side of it is dark. I had that flag inverted, which rendered a 92%-lit Mars as almost fully black. It is now verified by rendering the shape and counting lit pixels:
+
+| Target k | Measured lit fraction |
+|---|---|
+| 0.05 | 0.039 |
+| 0.25 | 0.242 |
+| 0.50 | 0.500 |
+| 0.75 | 0.751 |
+| 0.92 | 0.924 |
+| 0.99 | 0.994 |
+
+**What is real in the sky view:** star positions, spectral classes and distances; planet positions; the Milky Way band from the galactic equator, graded so the Sagittarius bulge is far brighter than the anticentre; atmospheric extinction using Kasten-Young airmass at roughly 0.2 magnitudes per airmass; scintillation stronger near the horizon; sky brightness from the Sun's depression and from moonlight.
+
+**What is not:** the ~1500 faint background stars are scenery, added because 76 stars makes any sky look empty. They are not catalogue positions, are never labelled and cannot be tapped. Their density does rise towards the galactic plane, which is true of the real sky. The app states this in the guide.
 
 ## Rendering notes
 
