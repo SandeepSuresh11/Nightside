@@ -1,0 +1,17 @@
+{
+  "name": "Nightside — aurora forecast",
+  "short_name": "Nightside",
+  "description": "Free aurora forecast, live map and alerts, built on NOAA and Open-Meteo open data. No account, no tracking, no paid tier.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#080E1A",
+  "theme_color": "#080E1A",
+  "categories": ["weather", "travel", "education"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
