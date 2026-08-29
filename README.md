@@ -47,18 +47,52 @@ Once installed it opens full screen with no browser chrome.
 |---|---|---|
 | Aurora | Live curtain header driven by current Kp, plus a Draw tab | NOAA Kp, OVATION, solar wind, Open-Meteo cloud |
 | Moon | Draggable sphere, real phase and terminator, 28 named features at true selenographic coordinates | Computed on-device; libration included |
-| Sun | Draggable disc with limb darkening, animated corona and prominences, active regions at reported heliographic positions | NOAA Solar Region Summary, F10.7, GOES X-ray |
+| Sun | Live NASA SDO photography, five channels, pan and zoom, NOAA active regions circled on top | SDO near-real-time imagery, NOAA Solar Region Summary, F10.7, GOES X-ray |
 | Stars | Draggable sky, 76 bright stars, 6 planets, Milky Way band, constellation lines | Catalogue positions + JPL Keplerian elements |
 
 Two libraries load from a CDN at runtime: Leaflet 1.9.4 (map) and IBM Plex (fonts). Both are cached by the service worker after first load. If either CDN is unreachable the map degrades to an error and everything else keeps working.
 
 ---
 
+## Photographic imagery
+
+### Sun — live, no setup
+
+The Sun view is now real photography rather than a drawing. NASA's Solar Dynamics Observatory publishes near-real-time full-disc JPEGs every 15 minutes, documented at `sdo.gsfc.nasa.gov/data/bestpractice.php`:
+
+```
+https://sdo.gsfc.nasa.gov/assets/img/latest/latest_<res>_<channel>.jpg
+res:     512 | 1024 | 2048 | 4096          (the app uses 1024)
+channel: 0094 0131 0171 0193 0211 0304 0335 1600 1700
+         HMIB HMII HMID HMIBC HMIIF HMIIC
+```
+
+Five are wired to the chips: 304 Å, 171 Å, 193 Å, HMI white light, HMI magnetogram. Public domain, no key. The cache-buster is bucketed to 15-minute windows so the browser reuses the image within a window instead of refetching on every redraw, and the service worker passes these straight to the network rather than caching them.
+
+**Overlay alignment.** The NOAA region circles are positioned using a disc-radius fraction per instrument, derived from the plate scales: AIA is 0.6″/px and HMI 0.5″/px, so at 4096 px a ~959″ solar radius lands at 0.390 and 0.468 of the frame width. Those are the constants in `SDO_CHANNELS`. Switch to **White light** — if the circles do not sit on the visible spots, nudge that one number.
+
+*Caveat: SDO posted a data-storage hardware failure notice recently, so the feed can drop out. The view degrades to a message and every number below it still works, because those come from NOAA rather than SDO.*
+
+### Moon — optional, one file
+
+The Moon is drawn procedurally by default. For a photographic Moon, put an equirectangular lunar map named **`moon.jpg`** next to `index.html`. The app loads it automatically, samples it on the sphere, and keeps the real phase, terminator and libration. If the file is not there it falls back silently and says so in the Moon panel.
+
+Requirements: equirectangular (plate carrée), 2:1 aspect, centred on 0° longitude, north up. 2048×1024 is plenty — the app downsamples anything larger.
+
+Where to get one:
+
+| Source | Notes |
+|---|---|
+| NASA SVS CGI Moon Kit — `svs.gsfc.nasa.gov/4720` | Authoritative, public domain, built from the LROC WAC mosaic. Supplied as 16-bit TIFF and EXR, so it needs converting to JPEG and resizing. |
+| NASA SVS 14959 | Moon models for web and AR; smaller, more web-ready assets. |
+
+I could not download and convert this for you — the sandbox I build in only reaches a package-registry allowlist, not NASA. So this is the one manual step.
+
 ## Rendering notes
 
-Both spheres are drawn per-pixel, which is where the two bugs in the first build came from.
+The Moon is drawn per-pixel, which is where most of the tuning went.
 
-**Compositing.** `putImageData` replaces the destination outright rather than blending, so drawing the Sun's disc that way punched a transparent square through the corona behind it — which read as a black box. Both the Sun and Moon now render into an offscreen canvas and land with `drawImage`, which composites properly.
+**Compositing.** `putImageData` replaces the destination outright rather than blending, so drawing the Sun's disc that way punched a transparent square through the corona behind it — which read as a black box. That is moot for the Sun now that it is real imagery, but the Moon renders into an offscreen canvas and lands with `drawImage` for the same reason.
 
 **Cost.** The Moon shader evaluates 28 named features per pixel. At full device resolution on a high-DPI phone that is over 200,000 pixels; it now renders into a fixed 328 px buffer (168 px while you drag) and scales up, cutting the work by 2.5× at rest and nearly 10× mid-drag. Features are precomputed into unit vectors with a cosine cull so most of them skip the `acos` entirely.
 
