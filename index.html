@@ -2096,6 +2096,9 @@ const MoonView = {
     dragHandler(st, (dx, dy) => {
       this.rotLon = norm180(this.rotLon - dx * 0.42);
       this.rotLat = clamp(this.rotLat + dy * 0.42, -88, 88);
+      this.dragging = true;
+      clearTimeout(this._settle);
+      this._settle = setTimeout(() => { this.dragging = false; this.schedule(); }, 180);
       this.schedule();
     }, () => { this.rotLon = 0; this.rotLat = 0; this.schedule(); });
     $('#moonReset').addEventListener('click', () => { this.rotLon = 0; this.rotLat = 0; this.schedule(); });
@@ -2108,7 +2111,7 @@ const MoonView = {
     const cv = this.cv, dpr = Math.min(window.devicePixelRatio || 1, 2);
     const W = cv.clientWidth, H = cv.clientHeight;
     if (!W || !H) return;
-    cv.width = W * dpr; cv.height = H * dpr;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     const g = cv.getContext('2d');
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, W, H);
@@ -2124,24 +2127,34 @@ const MoonView = {
        waxing moons are lit from selenographic east (the Mare Crisium limb). */
     const phaseAngle = Math.acos(clamp(2 * m.fraction - 1, -1, 1)) * DEG;
     const lS = RAD * (m.phase < 0.5 ? phaseAngle : -phaseAngle);
-    const bS = 0;
-    const sunV = [Math.cos(bS) * Math.sin(lS), Math.sin(bS), Math.cos(bS) * Math.cos(lS)];
+    const sunV = [Math.sin(lS), 0, Math.cos(lS)];
 
     const bc = RAD * (lib.lat + this.rotLat), lc = RAD * (lib.lon + this.rotLon);
     const cb = Math.cos(bc), sb = Math.sin(bc), cl = Math.cos(lc), sl = Math.sin(lc);
 
-    const x0 = Math.max(0, Math.floor(cx - R - 1)), y0 = Math.max(0, Math.floor(cy - R - 1));
-    const bw = Math.min(W - x0, Math.ceil(2 * R + 2)), bh = Math.min(H - y0, Math.ceil(2 * R + 2));
-    const img = g.createImageData(Math.round(bw * dpr), Math.round(bh * dpr));
-    const iw = img.width, ih = img.height;
-    const earthshine = 0.055 * (1 - m.fraction);
+    /* glow underneath, before the disc lands on top of it */
+    const gl = g.createRadialGradient(cx, cy, R * 0.95, cx, cy, R * 1.7);
+    gl.addColorStop(0, 'rgba(216,210,198,' + (0.11 * m.fraction).toFixed(3) + ')');
+    gl.addColorStop(1, 'rgba(216,210,198,0)');
+    g.fillStyle = gl; g.beginPath(); g.arc(cx, cy, R * 1.7, 0, 7); g.fill();
 
-    for (let py = 0; py < ih; py++) {
-      for (let px = 0; px < iw; px++) {
-        const sx = x0 + px / dpr, sy = y0 + py / dpr;
-        const nx = (sx - cx) / R, ny = (sy - cy) / R;
+    /* The surface shader costs ~28 acos per pixel, so it renders into a
+       fixed-size buffer and is scaled up. Capping it here keeps a high-DPI
+       phone from asking for four times the work, and the disc is smooth
+       enough that the upscale does not show. */
+    const N = this.dragging ? 168 : 328;
+    const oc = this._oc || (this._oc = document.createElement('canvas'));
+    if (oc.width !== N) { oc.width = N; oc.height = N; }
+    const og = oc.getContext('2d');
+    const img = og.createImageData(N, N);
+    const earthshine = 0.055 * (1 - m.fraction);
+    const half = N / 2;
+    for (let py = 0; py < N; py++) {
+      const ny = (py + 0.5 - half) / half;
+      for (let pxi = 0; pxi < N; pxi++) {
+        const nx = (pxi + 0.5 - half) / half;
         const r2 = nx * nx + ny * ny;
-        const o = (py * iw + px) * 4;
+        const o = (py * N + pxi) * 4;
         if (r2 > 1) continue;
         const nz = Math.sqrt(1 - r2);
         /* view -> moon-fixed */
@@ -2151,47 +2164,54 @@ const MoonView = {
         const lat = Math.asin(clamp(my, -1, 1)) * DEG;
         const lon = Math.atan2(mx, mz) * DEG;
 
-        let alb = moonAlbedo(lat, lon);
-        let lit = mx * sunV[0] + my * sunV[1] + mz * sunV[2];
-        lit = lit < 0 ? 0 : Math.pow(lit, 0.62);
-        /* soften the terminator by about a degree */
-        const term = smoothstep(-0.035, 0.035, mx * sunV[0] + my * sunV[1] + mz * sunV[2]);
+        const alb = moonAlbedo(lat, lon);
+        const dot = mx * sunV[0] + my * sunV[1] + mz * sunV[2];
+        const lit = dot < 0 ? 0 : Math.pow(dot, 0.62);
+        const term = smoothstep(-0.035, 0.035, dot);
         const I = clamp(lit * term + earthshine * (1 - term), 0, 1);
-        const edge = smoothstep(1, 0.985, r2);
         const base = alb * (0.24 + 0.76 * I);
         img.data[o] = clamp(base * 232, 0, 255);
         img.data[o + 1] = clamp(base * 228, 0, 255);
         img.data[o + 2] = clamp(base * 216, 0, 255);
-        img.data[o + 3] = 255 * edge;
+        img.data[o + 3] = 255 * smoothstep(1, 0.984, r2);
       }
     }
-    g.putImageData(img, Math.round(x0 * dpr), Math.round(y0 * dpr));
-
-    /* faint glow */
-    const gl = g.createRadialGradient(cx, cy, R * 0.95, cx, cy, R * 1.7);
-    gl.addColorStop(0, 'rgba(216,210,198,' + (0.10 * m.fraction).toFixed(3) + ')');
-    gl.addColorStop(1, 'rgba(216,210,198,0)');
-    g.fillStyle = gl; g.beginPath(); g.arc(cx, cy, R * 1.7, 0, 7); g.fill();
+    og.putImageData(img, 0, 0);
+    g.imageSmoothingEnabled = true;
+    g.drawImage(oc, cx - R, cy - R, 2 * R, 2 * R);
 
     /* labels for features that are on the visible hemisphere and lit */
-    if (this.labels) {
-      g.font = '10px ' + cssVar('--f-mono').replace(/"/g, '');
+    if (this.labels && !this.dragging) {
+      g.font = '10px ' + cssVar('--f-body').split(',')[0].replace(/"/g, '');
       g.textAlign = 'center';
-      for (const f of MOON_FEATURES) {
-        const [name, flat, flon, frad, type] = f;
-        if (frad < 40 && type !== 4) continue;
-        const b = RAD * flat, l = RAD * flon;
-        const fx = Math.cos(b) * Math.sin(l), fy = Math.sin(b), fz = Math.cos(b) * Math.cos(l);
-        /* moon-fixed -> view (inverse of the transform above) */
-        const ax = fx * cl - fz * sl, az1 = fx * sl + fz * cl;
-        const vy2 = fy * cb - az1 * sb, vz = fy * sb + az1 * cb;
-        if (vz < 0.22) continue;
-        const litv = fx * sunV[0] + fy * sunV[1] + fz * sunV[2];
-        if (litv < 0.06) continue;
-        const sx = cx + ax * R, sy = cy - vy2 * R;
-        g.fillStyle = type === 4 ? 'rgba(79,224,160,.95)' : 'rgba(8,14,26,.72)';
-        g.fillText(name, sx, sy + 3);
+      g.textBaseline = 'middle';
+      /* Collect candidates, biggest first, then place greedily and drop any
+         that would collide. A cluttered map is worse than a sparse one. */
+      const cand = [];
+      for (const f of MOON_F) {
+        const ax = f.x * cl - f.z * sl, az1 = f.x * sl + f.z * cl;
+        const vy2 = f.y * cb - az1 * sb, vz = f.y * sb + az1 * cb;
+        if (vz < 0.34) continue;                                   // too near the limb to read
+        if (f.x * sunV[0] + f.y * sunV[1] + f.z * sunV[2] < 0.12) continue;
+        cand.push({ name: f.name, type: f.type, prio: f.type === 4 ? 1e6 : f.rad,
+                    x: cx + ax * R, y: cy - vy2 * R });
       }
+      cand.sort((p1, p2) => p2.prio - p1.prio);
+      const placed = [];
+      let shown = 0;
+      for (const c of cand) {
+        if (shown >= 9) break;
+        const w2 = g.measureText(c.name).width / 2 + 4, h2 = 8;
+        const box = { l: c.x - w2, r: c.x + w2, t: c.y - h2, b: c.y + h2 };
+        if (placed.some(q => box.l < q.r && box.r > q.l && box.t < q.b && box.b > q.t)) continue;
+        placed.push(box); shown++;
+        g.lineWidth = 2.5;
+        g.strokeStyle = 'rgba(246,244,238,.75)';
+        g.strokeText(c.name, c.x, c.y);
+        g.fillStyle = c.type === 4 ? '#14795A' : 'rgba(38,44,54,.92)';
+        g.fillText(c.name, c.x, c.y);
+      }
+      g.textBaseline = 'alphabetic';
     }
 
     $('#moonStageVal').textContent = (this.rotLon || this.rotLat)
@@ -2204,37 +2224,89 @@ function smoothstep(a, b, x) { const t = clamp((x - a) / (b - a), 0, 1); return 
 function cssVar(k) { return getComputedStyle(document.documentElement).getPropertyValue(k).trim(); }
 function hash2(a, b) { let h = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return h - Math.floor(h); }
 
+/* Real elongations. Frigoris is a long narrow band and Procellarum runs
+   north-south; everything else gets an irregular outline rather than a
+   perfect circle, because no mare is actually circular. */
+const MARE_SHAPE = {
+  'Mare Frigoris': [3.6, 0], 'Oceanus Procellarum': [1.9, 1.5708], 'Mare Fecunditatis': [1.3, 1.2]
+};
+/* Precomputed unit vectors, tangent frames and cull thresholds — this runs
+   once per pixel per feature, so the acos has to be avoidable. */
+const MOON_F = MOON_FEATURES.map(f => {
+  const b = RAD * f[1], l = RAD * f[2];
+  const x = Math.cos(b) * Math.sin(l), y = Math.sin(b), z = Math.cos(b) * Math.cos(l);
+  const en = Math.hypot(z, x) || 1e-6;
+  const ex = z / en, ey = 0, ez = -x / en;
+  const rad = f[3] / MOON_R_KM;
+  return {
+    name: f[0], type: f[4], rad, x, y, z, ex, ey, ez,
+    nX: y * ez - z * ey, nY: z * ex - x * ez, nZ: x * ey - y * ex,
+    cull: Math.cos(Math.min(Math.PI, rad * 3.6)),
+    dark: f[3] < 700 ? 0.32 : 0.27,
+    seed: hash2(Math.round(f[3]), Math.round(f[1] * 3)) * 6,
+    asp: MARE_SHAPE[f[0]] || null
+  };
+});
+const TYCHO = (() => {
+  const b = RAD * -43.3, l = RAD * -11.4;
+  const x = Math.cos(b) * Math.sin(l), y = Math.sin(b), z = Math.cos(b) * Math.cos(l);
+  const en = Math.hypot(z, x) || 1e-6;
+  const ex = z / en, ey = 0, ez = -x / en;
+  const rays = [];
+  for (let k = 0; k < 13; k++) {
+    const strength = hash2(k, 9);
+    if (strength < 0.28) continue;
+    rays.push({ b0: (k / 13) * Math.PI * 2 + hash2(k, 5) * 0.5, s: strength, w: 0.030 + hash2(k, 17) * 0.045, k });
+  }
+  return { x, y, z, ex, ey, ez, nX: y * ez - z * ey, nY: z * ex - x * ez, nZ: x * ey - y * ex, rays,
+           cullIn: Math.cos(RAD * 4), cullOut: Math.cos(RAD * 72) };
+})();
+
 /** Surface albedo at a selenographic point, from real feature positions. */
 function moonAlbedo(lat, lon) {
   let a = 0.92;
   const b = RAD * lat, l = RAD * lon;
   const px = Math.cos(b) * Math.sin(l), py = Math.sin(b), pz = Math.cos(b) * Math.cos(l);
-  for (const f of MOON_FEATURES) {
-    const fb = RAD * f[1], fl = RAD * f[2];
-    const fx = Math.cos(fb) * Math.sin(fl), fy = Math.sin(fb), fz = Math.cos(fb) * Math.cos(fl);
-    const cosd = px * fx + py * fy + pz * fz;
+  for (let i = 0; i < MOON_F.length; i++) {
+    const f = MOON_F[i];
+    const cosd = px * f.x + py * f.y + pz * f.z;
+    if (cosd < f.cull) continue;
     const ang = Math.acos(clamp(cosd, -1, 1));
-    const rad = f[3] / MOON_R_KM;
-    if (ang > rad * 1.9) continue;
-    const t = smoothstep(rad * 1.15, rad * 0.55, ang);
-    if (f[4] === 1) a -= 0.30 * t;                          // mare basalt is darker
-    else if (f[4] === 2) {
-      a += 0.10 * t;                                        // fresh crater walls
-      const ring = 1 - Math.abs(ang - rad * 0.85) / (rad * 0.35);
-      if (ring > 0) a += 0.10 * ring;
+    const dx = px - f.x * cosd, dy = py - f.y * cosd, dz = pz - f.z * cosd;
+    const bp = Math.atan2(dx * f.ex + dy * f.ey + dz * f.ez, dx * f.nX + dy * f.nY + dz * f.nZ);
+    let shape = 1 + 0.16 * Math.sin(3 * bp + f.seed) + 0.085 * Math.sin(5 * bp + f.seed * 2)
+              + 0.04 * Math.sin(8 * bp + f.seed * 3);
+    if (f.asp) {
+      const ca = Math.cos(bp - f.asp[1]) / f.asp[0], sa = Math.sin(bp - f.asp[1]) * f.asp[0] * 0.55;
+      shape /= Math.sqrt(ca * ca + sa * sa);
+    }
+    const er = f.rad * shape;
+    if (ang > er * 1.25) continue;
+    const t = smoothstep(er * 1.04, er * 0.72, ang);
+    if (f.type === 1) a -= f.dark * t;
+    else if (f.type === 2) {
+      a += 0.09 * t;
+      const ring = 1 - Math.abs(ang - er * 0.85) / (er * 0.35);
+      if (ring > 0) a += 0.12 * ring;
     }
   }
-  /* Tycho's ray system really does reach a third of the way round the Moon */
-  const tb = RAD * -43.3, tl = RAD * -11.4;
-  const tx = Math.cos(tb) * Math.sin(tl), ty = Math.sin(tb), tz = Math.cos(tb) * Math.cos(tl);
-  const td = Math.acos(clamp(px * tx + py * ty + pz * tz, -1, 1)) * DEG;
-  if (td < 55 && td > 3) {
-    const bearing = Math.atan2(py - ty * Math.cos(td * RAD), px - tx * Math.cos(td * RAD));
-    const ray = Math.pow(Math.abs(Math.sin(bearing * 6.5)), 8);
-    a += 0.13 * ray * (1 - td / 55);
+  /* Tycho's ray system crosses most of the southern hemisphere. */
+  const cosT = px * TYCHO.x + py * TYCHO.y + pz * TYCHO.z;
+  if (cosT < TYCHO.cullIn && cosT > TYCHO.cullOut) {
+    const td = Math.acos(clamp(cosT, -1, 1)) * DEG;
+    const dx = px - TYCHO.x * cosT, dy = py - TYCHO.y * cosT, dz = pz - TYCHO.z * cosT;
+    const bearing = Math.atan2(dx * TYCHO.ex + dy * TYCHO.ey + dz * TYCHO.ez,
+                               dx * TYCHO.nX + dy * TYCHO.nY + dz * TYCHO.nZ);
+    let ray = 0;
+    for (const r of TYCHO.rays) {
+      const dbe = Math.abs(((bearing - r.b0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+      if (dbe > r.w * 2.6) continue;
+      ray += r.s * Math.exp(-(dbe * dbe) / (2 * r.w * r.w)) * (0.55 + 0.45 * Math.sin(td * 0.30 + r.k * 2.1));
+    }
+    a += 0.15 * clamp(ray, 0, 1.5) * Math.pow(1 - (td - 4) / 68, 1.15);
   }
-  a += (hash2(Math.round(lat * 3), Math.round(lon * 3)) - 0.5) * 0.035;
-  return clamp(a, 0.32, 1.08);
+  a += (hash2(Math.round(lat * 4), Math.round(lon * 4)) - 0.5) * 0.030;
+  return clamp(a, 0.30, 1.10);
 }
 
 function renderMoonPanels() {
@@ -2355,80 +2427,174 @@ function drawAltChart(p) {
    SUN MODE
    ============================================================ */
 const SunView = {
-  rot: 0, labels: true, raf: null,
+  rot: 0, labels: true, raf: null, stopped: true, t0: 0,
+  cache: null, cacheKey: '',
   init() {
     dragHandler($('#sunStage'), (dx) => { this.rot = norm180(this.rot - dx * 0.5); this.schedule(); },
       () => { this.rot = 0; this.schedule(); });
     $('#sunReset').addEventListener('click', () => { this.rot = 0; this.schedule(); });
     $('#sunLabels').addEventListener('click', () => { this.labels = !this.labels; this.schedule(); });
     this.cv = $('#sunCv');
+    this.reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   },
   schedule() { if (!this.raf) this.raf = requestAnimationFrame(() => { this.raf = null; this.draw(); }); },
-  draw() {
-    const cv = this.cv, dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const W = cv.clientWidth, H = cv.clientHeight;
-    if (!W || !H) return;
-    cv.width = W * dpr; cv.height = H * dpr;
-    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
-    const R = Math.min(W, H) * 0.35, cx = W / 2, cy = H / 2;
+  activate() {
+    this.stopped = false;
+    if (this.reduce) { this.draw(); return; }
+    if (!this.loopRaf) this.loop();
+  },
+  stop() { this.stopped = true; if (this.loopRaf) { cancelAnimationFrame(this.loopRaf); this.loopRaf = null; } },
+  loop() {
+    if (this.stopped) { this.loopRaf = null; return; }
+    this.draw();
+    this.loopRaf = requestAnimationFrame(() => this.loop());
+  },
 
-    /* corona */
-    const cor = g.createRadialGradient(cx, cy, R, cx, cy, R * 2.1);
-    cor.addColorStop(0, 'rgba(243,201,105,.30)');
-    cor.addColorStop(.45, 'rgba(243,201,105,.07)');
-    cor.addColorStop(1, 'rgba(243,201,105,0)');
-    g.fillStyle = cor; g.beginPath(); g.arc(cx, cy, R * 2.1, 0, 7); g.fill();
-
-    /* photosphere with limb darkening — I(mu) = 1 - u(1 - mu), u about 0.6 in white light */
-    const x0 = Math.floor(cx - R - 1), y0 = Math.floor(cy - R - 1);
-    const bw = Math.ceil(2 * R + 2), bh = Math.ceil(2 * R + 2);
-    const img = g.createImageData(Math.round(bw * dpr), Math.round(bh * dpr));
-    const iw = img.width, ih = img.height;
-    for (let py = 0; py < ih; py++) {
-      for (let px = 0; px < iw; px++) {
-        const sx = x0 + px / dpr, sy = y0 + py / dpr;
-        const nx = (sx - cx) / R, ny = (sy - cy) / R, r2 = nx * nx + ny * ny;
-        const o = (py * iw + px) * 4;
+  /**
+   * The photosphere is expensive per-pixel, so it is rendered once into an
+   * offscreen canvas and reused until the rotation or size changes. It is also
+   * drawn with drawImage rather than putImageData — putImageData replaces the
+   * destination outright, which would punch a square hole through the corona.
+   */
+  disc(R, dpr) {
+    const key = R.toFixed(1) + '|' + dpr.toFixed(2) + '|' + Math.round(this.rot * 4);
+    if (this.cache && this.cacheKey === key) return this.cache;
+    const size = Math.ceil(2 * R + 2);
+    const oc = document.createElement('canvas');
+    oc.width = Math.round(size * dpr); oc.height = Math.round(size * dpr);
+    const og = oc.getContext('2d');
+    const img = og.createImageData(oc.width, oc.height);
+    const c0 = size / 2;
+    for (let py = 0; py < oc.height; py++) {
+      for (let px = 0; px < oc.width; px++) {
+        const sx = px / dpr - c0, sy = py / dpr - c0;
+        const nx = sx / R, ny = sy / R, r2 = nx * nx + ny * ny;
+        const o = (py * oc.width + px) * 4;
         if (r2 > 1) continue;
         const mu = Math.sqrt(1 - r2);
+        /* limb darkening: I(mu) = 1 - u(1 - mu), u about 0.62 in white light */
         let I = 1 - 0.62 * (1 - mu);
-        I *= 0.97 + 0.06 * hash2(Math.round(sx * 1.4), Math.round(sy * 1.4));   // granulation
+        const gx = Math.round(sx * 1.5), gy = Math.round(sy * 1.5);
+        I *= 0.965 + 0.07 * hash2(gx, gy);                       // granulation
+        I *= 1 + 0.035 * Math.sin(gx * 0.9) * Math.sin(gy * 0.9);
+        if (mu < 0.35) I *= 1 + 0.10 * hash2(gx, gy + 91);       // faculae near the limb
         img.data[o] = clamp(255 * I, 0, 255);
-        img.data[o + 1] = clamp(232 * I, 0, 255);
-        img.data[o + 2] = clamp(168 * I * (0.82 + 0.18 * mu), 0, 255);
-        img.data[o + 3] = 255 * smoothstep(1, 0.99, r2);
+        img.data[o + 1] = clamp(233 * I, 0, 255);
+        img.data[o + 2] = clamp(170 * I * (0.80 + 0.20 * mu), 0, 255);
+        img.data[o + 3] = 255 * smoothstep(1, 0.985, r2);
       }
     }
-    g.putImageData(img, Math.round(x0 * dpr), Math.round(y0 * dpr));
+    og.putImageData(img, 0, 0);
+    this.cache = { cv: oc, size }; this.cacheKey = key;
+    return this.cache;
+  },
+
+  draw() {
+    const cv = this.cv; if (!cv) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = cv.clientWidth, H = cv.clientHeight;
+    if (!W || !H) return;
+    if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    const R = Math.min(W, H) * 0.32, cx = W / 2, cy = H / 2;
+    const t = this.reduce ? 6 : (performance.now() - (this.t0 || (this.t0 = performance.now()))) / 1000;
+
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+
+    /* corona: streamers that drift and breathe, brighter where regions sit */
+    for (let i = 0; i < 64; i++) {
+      const seed = hash2(i, 3);
+      const ang = (i / 64) * Math.PI * 2 + t * 0.010 + seed * 0.09;
+      const pulse = 0.72 + 0.28 * Math.sin(t * (0.5 + seed * 0.8) + seed * 12);
+      const len = R * (0.10 + seed * 0.62) * pulse;
+      const wid = (0.006 + seed * 0.016) * Math.PI;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(ang - wid) * R * 0.99, cy + Math.sin(ang - wid) * R * 0.99);
+      g.lineTo(cx + Math.cos(ang) * (R + len), cy + Math.sin(ang) * (R + len));
+      g.lineTo(cx + Math.cos(ang + wid) * R * 0.99, cy + Math.sin(ang + wid) * R * 0.99);
+      g.closePath();
+      const rg = g.createRadialGradient(cx, cy, R * 0.95, cx, cy, R + len);
+      rg.addColorStop(0, 'rgba(255,214,132,' + (0.16 * pulse).toFixed(3) + ')');
+      rg.addColorStop(1, 'rgba(255,180,90,0)');
+      g.fillStyle = rg; g.fill();
+    }
+    /* inner glow */
+    const gl = g.createRadialGradient(cx, cy, R * 0.9, cx, cy, R * 1.55);
+    gl.addColorStop(0, 'rgba(255,220,150,.34)');
+    gl.addColorStop(1, 'rgba(255,190,110,0)');
+    g.fillStyle = gl; g.beginPath(); g.arc(cx, cy, R * 1.55, 0, 7); g.fill();
+    g.restore();
+
+    /* photosphere, composited over the corona */
+    const d = this.disc(R, dpr);
+    g.drawImage(d.cv, cx - d.size / 2, cy - d.size / 2, d.size, d.size);
+
+    /* prominences on the limb — slow arcs of cooler hydrogen */
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    for (let k = 0; k < 6; k++) {
+      const seed = hash2(k, 23);
+      if (seed < 0.35) continue;
+      const ang = seed * Math.PI * 2 + t * 0.012;
+      const h = R * (0.02 + seed * 0.05) * (0.6 + 0.4 * Math.sin(t * (0.6 + seed) + k * 3));
+      const spread = 0.05 + seed * 0.06;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(ang - spread) * R, cy + Math.sin(ang - spread) * R);
+      g.quadraticCurveTo(cx + Math.cos(ang) * (R + h * 2.4), cy + Math.sin(ang) * (R + h * 2.4),
+                         cx + Math.cos(ang + spread) * R, cy + Math.sin(ang + spread) * R);
+      g.strokeStyle = 'rgba(255,120,110,.42)';
+      g.lineWidth = 2.2; g.stroke();
+    }
+    g.restore();
 
     /* active regions at their reported heliographic positions */
     const regs = S.regions || [];
     let onDisc = 0;
-    g.font = '9px ' + cssVar('--f-mono').replace(/"/g, '');
-    g.textAlign = 'center';
+    const marks = [];
     for (const r of regs) {
       const b = RAD * r.lat, l = RAD * (r.lon + this.rot);
       const px2 = Math.cos(b) * Math.sin(l), py2 = Math.sin(b), pz = Math.cos(b) * Math.cos(l);
       if (pz <= 0.02) continue;
       onDisc++;
       const sx = cx + px2 * R, sy = cy - py2 * R;
-      /* area is in millionths of a hemisphere; scale to something visible */
-      const rad = clamp(Math.sqrt(Math.max(r.area, 10)) * R * 0.0022, 1.6, R * 0.13);
+      const rad = clamp(Math.sqrt(Math.max(r.area, 10)) * R * 0.0024, 1.5, R * 0.12);
       g.save();
-      g.translate(sx, sy);
-      g.scale(Math.max(pz, 0.12), 1);           // foreshorten towards the limb
-      g.beginPath(); g.arc(0, 0, rad * 1.7, 0, 7);
-      g.fillStyle = 'rgba(150,90,30,.42)'; g.fill();
+      g.translate(sx, sy); g.scale(Math.max(pz, 0.14), 1);
+      g.beginPath(); g.arc(0, 0, rad * 1.8, 0, 7);
+      g.fillStyle = 'rgba(158,96,34,.40)'; g.fill();
       g.beginPath(); g.arc(0, 0, rad, 0, 7);
-      g.fillStyle = 'rgba(40,20,8,.88)'; g.fill();
+      g.fillStyle = 'rgba(34,17,6,.90)'; g.fill();
       g.restore();
-      if (this.labels && rad > 2.4) {
-        g.fillStyle = 'rgba(233,239,248,.85)';
-        g.fillText(String(r.region), sx, sy - rad - 5);
-      }
+      marks.push({ x: sx, y: sy, r: rad, n: r.region, area: r.area });
     }
+
+    /* labels, biggest regions first, no overlaps */
+    if (this.labels && marks.length) {
+      g.font = '10px ' + cssVar('--f-mono').replace(/"/g, '');
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      marks.sort((a, b) => b.area - a.area);
+      const placed = []; let shown = 0;
+      for (const m of marks) {
+        if (shown >= 6 || m.r < 2) break;
+        const label = String(m.n);
+        const w2 = g.measureText(label).width / 2 + 3;
+        const ly = m.y - m.r - 9;
+        const box = { l: m.x - w2, r: m.x + w2, t: ly - 7, b: ly + 7 };
+        if (placed.some(q => box.l < q.r && box.r > q.l && box.t < q.b && box.b > q.t)) continue;
+        placed.push(box); shown++;
+        g.lineWidth = 2.5; g.strokeStyle = 'rgba(60,34,8,.55)';
+        g.strokeText(label, m.x, ly);
+        g.fillStyle = 'rgba(255,246,225,.95)';
+        g.fillText(label, m.x, ly);
+      }
+      g.textBaseline = 'alphabetic';
+    }
+
     $('#sunStageVal').textContent = this.rot ? fmtN(Math.abs(this.rot), 0) + '° ' + (this.rot >= 0 ? 'E' : 'W')
-      : (regs.length ? onDisc + ' of ' + regs.length + ' regions facing us' : '');
+      : (regs.length ? onDisc + ' of ' + regs.length + ' regions facing us' : 'no numbered regions');
   }
 };
 
@@ -2446,6 +2612,7 @@ async function loadSun() {
   SunView.schedule();
 }
 function parseRegions() {
+  SunView.cacheKey = '';
   const raw = rows(S.data.regions || []);
   if (!raw.length) { S.regions = []; return; }
   /* keep only the most recent observation date in the file */
@@ -2868,9 +3035,9 @@ function showMode(name) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (name === 'moon') { renderMoonPanels(); MoonView.schedule(); }
   if (name === 'sun') {
-    renderSunPanels(); SunView.schedule();
+    renderSunPanels(); SunView.activate();
     if (!loadSun._done) { loadSun._done = true; loadSun(); }
-  }
+  } else SunView.stop();
   if (name === 'stars') { renderSkyPanels(); SkyView.schedule(); }
   if (name === 'aurora') setTimeout(() => { if (map) map.invalidateSize(); }, 60);
 }

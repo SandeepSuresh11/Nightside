@@ -47,12 +47,26 @@ Once installed it opens full screen with no browser chrome.
 |---|---|---|
 | Aurora | Live curtain header driven by current Kp, plus a Draw tab | NOAA Kp, OVATION, solar wind, Open-Meteo cloud |
 | Moon | Draggable sphere, real phase and terminator, 28 named features at true selenographic coordinates | Computed on-device; libration included |
-| Sun | Draggable disc with limb darkening, active regions plotted at reported heliographic positions | NOAA Solar Region Summary, F10.7, GOES X-ray |
+| Sun | Draggable disc with limb darkening, animated corona and prominences, active regions at reported heliographic positions | NOAA Solar Region Summary, F10.7, GOES X-ray |
 | Stars | Draggable sky, 76 bright stars, 6 planets, Milky Way band, constellation lines | Catalogue positions + JPL Keplerian elements |
 
 Two libraries load from a CDN at runtime: Leaflet 1.9.4 (map) and IBM Plex (fonts). Both are cached by the service worker after first load. If either CDN is unreachable the map degrades to an error and everything else keeps working.
 
 ---
+
+## Rendering notes
+
+Both spheres are drawn per-pixel, which is where the two bugs in the first build came from.
+
+**Compositing.** `putImageData` replaces the destination outright rather than blending, so drawing the Sun's disc that way punched a transparent square through the corona behind it — which read as a black box. Both the Sun and Moon now render into an offscreen canvas and land with `drawImage`, which composites properly.
+
+**Cost.** The Moon shader evaluates 28 named features per pixel. At full device resolution on a high-DPI phone that is over 200,000 pixels; it now renders into a fixed 328 px buffer (168 px while you drag) and scales up, cutting the work by 2.5× at rest and nearly 10× mid-drag. Features are precomputed into unit vectors with a cosine cull so most of them skip the `acos` entirely.
+
+**Mare outlines.** Positions and sizes are the real published values, but drawing them as perfect circles looked nothing like the Moon. Outlines now carry a low-frequency irregularity, and Mare Frigoris and Oceanus Procellarum get their real elongation — Frigoris is a long narrow band, Procellarum runs north–south.
+
+**Tycho's rays.** The first version computed a bearing without a proper local tangent frame and produced a geometric starburst. It now builds east/north vectors at the crater and traces the streaks along great circles, with uneven widths and real gaps, reaching about 70° from the crater as they do in life.
+
+**Labels.** Both views place labels greedily, largest feature first, and drop any that would overlap one already placed — capped at 9 on the Moon and 6 on the Sun. Labels are suppressed entirely while dragging.
 
 ## Draw tab
 
